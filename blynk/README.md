@@ -12,3 +12,6 @@ This code is only useful if you want the vase to work with Blynk.
   - V3: Gauge for the water level
   - V4: Slider for the moisture threshold
   - V5: Switch for the pump
+  - V6: Pump history
+  - V7: Pump volume
+  - V8: Countdown before sleep

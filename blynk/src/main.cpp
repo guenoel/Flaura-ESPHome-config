@@ -74,6 +74,7 @@ struct Timer {
 Timer cycleTimer;
 BlynkTimer pumpTimer;
 BlynkTimer hibernationTimer;
+BlynkTimer countdownTimer;
 
 // ------------------------ Declarations ---------------------- //
 Button button(PIN_BUTTON);
@@ -84,6 +85,7 @@ WaterLevel waterLevel(PIN_WATER_SIGNAL, PIN_WATER_POWER_LEVEL_10, PIN_WATER_POWE
 
 uint8_t moistureThreshold;
 uint8_t pumpDurationSec;
+long countdownBeforeSleep;
 
 // ------------------------ Blynk Config ---------------------- //
 
@@ -125,7 +127,7 @@ BLYNK_WRITE(V7) {
 
     pumpDurationSec = pumpDurationSec / 2;
 
-    Serial.println("V7 received, pump duration: " + String(pumpDurationSec));
+    Serial.println("V7 received, pump volume: " + String(pumpDurationSec * 2) + "ml, converted into pump duration: " + String(pumpDurationSec) + " sec");
 }
 
 void turnOffBlynkPumpSwitch() {
@@ -241,6 +243,11 @@ void sleepForeverIfNeeded() {
     }
 }
 
+void updateCountdown() {
+    Blynk.virtualWrite(V8, countdownBeforeSleep - 2);
+    countdownBeforeSleep--;
+}
+
 void prepareForHibernation() {
     Serial.println("--- Going to sleep soon ---");
 
@@ -248,10 +255,14 @@ void prepareForHibernation() {
         // was woken up by user action
         // maybe user wants to do something
         // let's not go to sleep immediately
-        hibernationTimer.setTimeout(60000L + pumpDurationSec * 1000L, hibernate);
+        countdownBeforeSleep = 60 + pumpDurationSec;
+        hibernationTimer.setTimeout(countdownBeforeSleep * 1000L, hibernate);
     } else {
-        hibernationTimer.setTimeout(5000L + pumpDurationSec * 1000L, hibernate);
+        countdownBeforeSleep = 2 + pumpDurationSec;
+        hibernationTimer.setTimeout(countdownBeforeSleep * 1000L, hibernate);
     }
+
+    countdownTimer.setInterval(1000L, updateCountdown);
 }
 
 // ------------------------ Bluetooth functions ---------------------- //
@@ -391,6 +402,7 @@ void loop() {
     Blynk.run();
     pumpTimer.run();
     hibernationTimer.run();
+    countdownTimer.run();
 
     button.loopRoutine();
     battery.loopRoutine();
