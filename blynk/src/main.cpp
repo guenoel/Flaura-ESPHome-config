@@ -90,6 +90,8 @@ int8_t moistureThreshold = 50;
 
 // called every time the device is connected to Blynk.Cloud
 BLYNK_CONNECTED() {
+    Serial.println("Connection to Blynk established");
+    Blynk.syncVirtual(V4, V7);
 }
 
 // called every time the V4 state changes
@@ -335,7 +337,6 @@ void setup() {
 
     WiFi.begin(ssid, password);
     Blynk.config(BLYNK_AUTH_TOKEN); // Configure Blynk to use WiFi, but don't connect yet
-    Blynk.syncVirtual(V4);
 }
 
 void loop() {
