@@ -160,7 +160,7 @@ void hibernate() {
 
 void sleepForeverIfNeeded() {
     if (battery.getBatteryVoltage() <= BATTERY_THRESHOLD) {
-        Blynk.virtualWrite(V7, 0);
+        Blynk.virtualWrite(V1, 0);
         Serial.println("--- Sleep forever because battery is lower than safety threshold ---");
 
         esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_SLOW_MEM, ESP_PD_OPTION_OFF);
