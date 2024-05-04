@@ -33,10 +33,10 @@ class WaterPump {
         bool isIdle();
 
     public:
-        WaterPump(gpio_num_t pin, unsigned long pumpOperationDuration);
+        WaterPump(gpio_num_t pin);
 
         void loopRoutine();
-        void startPumping();
+        void startPumping(uint8_t pumpDurationSec);
         void stopPumping();
 };
 

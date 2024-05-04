@@ -13,7 +13,6 @@
 #include <WiFiClient.h>
 #include <BlynkSimpleEsp32.h>
 
-
 // ------------------------ Bluetooth ------------------------ //
 
 #include "BluetoothSerial.h"
@@ -41,7 +40,6 @@ Preferences preferences;
 const gpio_num_t PIN_BUTTON = GPIO_NUM_13;
 
 const gpio_num_t PIN_PUMP_POWER = GPIO_NUM_17;
-const uint16_t PUMP_DURATION = 5000;
 
 const gpio_num_t PIN_MOISTURE_POWER = GPIO_NUM_19;
 const gpio_num_t PIN_MOISTURE_SIGNAL = GPIO_NUM_34;
@@ -79,12 +77,13 @@ BlynkTimer hibernationTimer;
 
 // ------------------------ Declarations ---------------------- //
 Button button(PIN_BUTTON);
-WaterPump waterPump(PIN_PUMP_POWER, PUMP_DURATION);
+WaterPump waterPump(PIN_PUMP_POWER);
 Moisture moisture(PIN_MOISTURE_POWER, PIN_MOISTURE_SIGNAL, MEASURE_WAITING_TIME, MOISTURE_CALIBRATION_WATER, MOISTURE_CALIBRATION_AIR);
 Battery battery(PIN_BATTERY_LEVEL, MEASURE_WAITING_TIME, BATTERY_MIN_VOLTAGE, BATTERY_MAX_VOLTAGE);
 WaterLevel waterLevel(PIN_WATER_SIGNAL, PIN_WATER_POWER_LEVEL_10, PIN_WATER_POWER_LEVEL_30, PIN_WATER_POWER_LEVEL_70, PIN_WATER_POWER_LEVEL_100, MEASURE_WAITING_TIME);
 
-int8_t moistureThreshold = 50;
+uint8_t moistureThreshold;
+uint8_t pumpDurationSec;
 
 // ------------------------ Blynk Config ---------------------- //
 
@@ -109,6 +108,26 @@ BLYNK_WRITE(V4) {
     Serial.println("V4 received, moisture threshold: " + String(moistureThreshold));
 }
 
+// called every time the V7 state changes
+BLYNK_WRITE(V7) {
+    // V7 received is volume to water in millimeter
+    // I measured that roughly 2ml of water is pushed per second
+    // so pumpDurationSec = V7 / 2
+    int v7Value = param.asInt();
+
+    if (v7Value < 0) {
+        pumpDurationSec = 1;
+    } else if (v7Value > 100) { // 100ml max
+        pumpDurationSec = 100;
+    } else {
+        pumpDurationSec = v7Value;
+    }
+
+    pumpDurationSec = pumpDurationSec / 2;
+
+    Serial.println("V7 received, pump duration: " + String(pumpDurationSec));
+}
+
 void turnOffBlynkPumpSwitch() {
     Blynk.virtualWrite(V5, 0);
 }
@@ -118,9 +137,9 @@ BLYNK_WRITE(V5) {
     int v5Value = param.asInt();
 
     if (v5Value == 1) {
-        waterPump.startPumping();
+        waterPump.startPumping(pumpDurationSec);
         Blynk.virtualWrite(V6, 1); // log pump action
-        pumpTimer.setTimeout(PUMP_DURATION, turnOffBlynkPumpSwitch);
+        pumpTimer.setTimeout(pumpDurationSec * 1000, turnOffBlynkPumpSwitch);
     } else {
         waterPump.stopPumping();
     }
@@ -140,52 +159,6 @@ void sendDataToBlynk() {
     Blynk.virtualWrite(V1, battery.getBatteryPercentage());
     Blynk.virtualWrite(V2, moisture.getMoisturePercentage());
     Blynk.virtualWrite(V3, waterLevel.getWaterPercentage());
-}
-
-// ------------------------ Deep sleep functions ---------------------- //
-
-void deepSleep(long long int timeToSleep) {
-    esp_sleep_enable_ext0_wakeup((gpio_num_t)PIN_BUTTON, WAKEUP_LEVEL);
-    esp_sleep_enable_timer_wakeup(timeToSleep);
-    esp_deep_sleep_start();
-}
-
-
-void hibernate() {
-    Serial.println("--- ZZZZZzzzzz ---");
-
-    esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_SLOW_MEM, ESP_PD_OPTION_OFF);
-    esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_FAST_MEM, ESP_PD_OPTION_OFF);
-    esp_sleep_pd_config(ESP_PD_DOMAIN_XTAL,         ESP_PD_OPTION_OFF);
-    deepSleep(TIME_TO_SLEEP);
-}
-
-void sleepForeverIfNeeded() {
-    if (battery.getBatteryVoltage() <= BATTERY_THRESHOLD) {
-        Blynk.virtualWrite(V1, 0);
-        Serial.println("--- Sleep forever because battery is lower than safety threshold ---");
-
-        esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_SLOW_MEM, ESP_PD_OPTION_OFF);
-        esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_FAST_MEM, ESP_PD_OPTION_OFF);
-        esp_sleep_pd_config(ESP_PD_DOMAIN_XTAL,         ESP_PD_OPTION_OFF);
-
-        deepSleep(TIME_TO_SLEEP_FOREVER);
-    } else {
-        Serial.println("--- Battery health OK: " + String(battery.getBatteryVoltage()) + "V ---");
-    }
-}
-
-void prepareForHibernation() {
-    if (esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_EXT0) {
-        // was woken up by user action
-        // maybe user wants to do something
-        // let's not go to sleep immediately
-        Serial.println("--- Going to sleep in 1 min ---");
-        hibernationTimer.setTimeout(60000L, hibernate);
-    } else {
-        Serial.println("--- Going to sleep in 10s ---");
-        hibernationTimer.setTimeout(10000L, hibernate);
-    }
 }
 
 // ------------------------ Storage preferences functions ---------------------- //
@@ -213,6 +186,72 @@ void loadCredentials(char* ssid, char* password) {
     // load the strings into the char*
     ssidStr.toCharArray(ssid, ssidStr.length() + 1);
     passwordStr.toCharArray(password, passwordStr.length() + 1);
+}
+
+void saveData() {
+    preferences.begin("data", false);
+    preferences.putUInt("moisture", moistureThreshold);
+    preferences.putUInt("duration", pumpDurationSec);
+    preferences.end();
+}
+
+void loadData() {
+    preferences.begin("data", false);
+    moistureThreshold = preferences.getUInt("moisture", 0);
+    pumpDurationSec = preferences.getUInt("duration", 0);
+    preferences.end();
+
+    Serial.println("Data loaded from storage");
+    Serial.println("======> moistureThreshold: " + String(moistureThreshold));
+    Serial.println("======> pumpDurationSec: " + String(pumpDurationSec));
+}
+
+// ------------------------ Deep sleep functions ---------------------- //
+
+void deepSleep(long long int timeToSleep) {
+    esp_sleep_enable_ext0_wakeup((gpio_num_t)PIN_BUTTON, WAKEUP_LEVEL);
+    esp_sleep_enable_timer_wakeup(timeToSleep);
+    esp_deep_sleep_start();
+}
+
+
+void hibernate() {
+    Serial.println("--- Saving data ---");
+    saveData();
+
+    Serial.println("--- ZZZZZzzzzz ---");
+    esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_SLOW_MEM, ESP_PD_OPTION_OFF);
+    esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_FAST_MEM, ESP_PD_OPTION_OFF);
+    esp_sleep_pd_config(ESP_PD_DOMAIN_XTAL,         ESP_PD_OPTION_OFF);
+    deepSleep(TIME_TO_SLEEP);
+}
+
+void sleepForeverIfNeeded() {
+    if (battery.getBatteryVoltage() <= BATTERY_THRESHOLD) {
+        Blynk.virtualWrite(V1, 0);
+        Serial.println("--- Sleep forever because battery is lower than safety threshold ---");
+
+        esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_SLOW_MEM, ESP_PD_OPTION_OFF);
+        esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_FAST_MEM, ESP_PD_OPTION_OFF);
+        esp_sleep_pd_config(ESP_PD_DOMAIN_XTAL,         ESP_PD_OPTION_OFF);
+
+        deepSleep(TIME_TO_SLEEP_FOREVER);
+    } else {
+        Serial.println("--- Battery health OK: " + String(battery.getBatteryVoltage()) + "V ---");
+    }
+}
+
+void prepareForHibernation() {
+    Serial.println("--- Going to sleep soon ---");
+
+    if (esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_EXT0) {
+        // was woken up by user action
+        // maybe user wants to do something
+        // let's not go to sleep immediately
+        hibernationTimer.setTimeout(60000L + pumpDurationSec * 1000L, hibernate);
+    } else {
+        hibernationTimer.setTimeout(5000L + pumpDurationSec * 1000L, hibernate);
+    }
 }
 
 // ------------------------ Bluetooth functions ---------------------- //
@@ -279,7 +318,7 @@ void waterPlantIfNeeded() {
     Serial.println("--- Moisture " + String(moisture.getMoisturePercentage()) + "% --- threshold: " + moistureThreshold + "% ---");
     if (waterLevel.getWaterPercentage() > 0 && moisture.getMoisturePercentage() < moistureThreshold) {
         Serial.println("--- Watering thirsty plant --");
-        waterPump.startPumping();
+        waterPump.startPumping(pumpDurationSec);
         Blynk.virtualWrite(V6, 1); // log pump action
     } else {
         Serial.println("--- No need to water plant --");
@@ -334,8 +373,10 @@ void setup() {
     char password[32];
 
     loadCredentials(ssid, password);
+    loadData();
 
     WiFi.begin(ssid, password);
+    
     Blynk.config(BLYNK_AUTH_TOKEN); // Configure Blynk to use WiFi, but don't connect yet
 }
 

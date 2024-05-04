@@ -36,9 +36,8 @@ bool WaterPump::isIdle() {
 
 // -------------------------------- public methods -------------------------------- //
 
-WaterPump::WaterPump(gpio_num_t pin, unsigned long pumpOperationDuration) {
+WaterPump::WaterPump(gpio_num_t pin) {
     WaterPump::pin = pin;
-    WaterPump::pumpOperationDuration = pumpOperationDuration;
     pinMode(pin, OUTPUT);
 }
 
@@ -63,7 +62,8 @@ void WaterPump::loopRoutine() {
     }
 }
 
-void WaterPump::startPumping() {
+void WaterPump::startPumping(uint8_t pumpDurationSec) {
+    WaterPump::pumpOperationDuration = pumpDurationSec * 1000;
     if (isIdle()) {
         goToNextState();
     } else {
