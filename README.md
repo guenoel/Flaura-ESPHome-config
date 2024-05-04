@@ -246,6 +246,8 @@ It should not be hard to know what goes where since it is very well indicated on
 If you only want to have an autonomous smart plant, you can just upload the ESPHome code to the LolinD32 board by plugging it to your computer. To do that, you need to go to [ESPHome Web](https://web.esphome.io/) and upload the esphome-plantidote.yaml file.
 
 ### HomeAssistant & ESPHome
+![](./images/presentation/ha-widgets.png)
+
 If you want to be able to manually control and monitor your plant, you will need to have a Home Assitant server. For that, [go here](https://www.home-assistant.io/getting-started/).
 
 Once Home Assitant setup, you need to create an ESPHome instance:
@@ -279,9 +281,10 @@ However, if not detected, you can manually setup a static IP
 You're all set, you can now configure the dashboard as you like.
 See yaml widget files in esphome folder for widget examples.
 
-## Blynk Instructions
+## Blynk instructions
+[See instructions here](https://github.com/MikeBailleul/plantidote-smart-flower-pot/tree/main/blynk)
 
-[See here](https://github.com/MikeBailleul/plantidote-smart-flower-pot/tree/main/blynk)
+![](./images/presentation/blynk-widget.png)
 
 ## PCB design choices
 
