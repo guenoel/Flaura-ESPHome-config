@@ -15,3 +15,5 @@ This code is only useful if you want the vase to work with Blynk.
   - V6: Pump history
   - V7: Pump volume
   - V8: Countdown before sleep
+
+  ![](../images/presentation/blynk-widget.png)
