@@ -3,7 +3,10 @@ entities:
   - entity: sensor.plantidote_water_level
     secondary_info: none
     icon: mdi:water-percent
-  - entity: sensor.plantidote_soil_moisture
+  - entity: sensor.plantidote_soil_moisture_voltage
+    icon: ''
+    secondary_info: none
+  - entity: sensor.plantidote_soil_moisture_percentage
     icon: mdi:sprout
     secondary_info: none
   - entity: sensor.plantidote_battery_voltage

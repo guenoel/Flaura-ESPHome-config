@@ -1,4 +1,3 @@
-
 substitutions:
   esp_name: Plantidote
   esp_id: plantidote
@@ -26,8 +25,9 @@ esphome:
       - output.turn_off: ${esp_id}_power_moisture
       - output.turn_off: ${esp_id}_power_pump
       - output.turn_off: ${esp_id}_power_wl_100
-      - output.turn_off: ${esp_id}_power_wl_70
-      - output.turn_off: ${esp_id}_power_wl_30
+      - output.turn_off: ${esp_id}_power_wl_75
+      - output.turn_off: ${esp_id}_power_wl_50
+      - output.turn_off: ${esp_id}_power_wl_25
       - output.turn_off: ${esp_id}_power_wl_10
       - script.execute: run
 
@@ -36,12 +36,12 @@ time:
     id: ha_time
 
 esp32:
-  board: lolin_d32
+  board: lolin32
   framework:
     type: arduino
 
 deep_sleep:
-  wakeup_pin: GPIO13
+  wakeup_pin: GPIO12
 
 # Enable logging
 logger:
@@ -49,27 +49,27 @@ logger:
 # Enable Home Assistant API
 api:
   encryption:
-    key: <encryption_key_here>
+    key: !secret plantidote_api_encryption_key
 
 ota:
-  password: !secret ota_password
+  - platform: esphome
+    password: !secret plantidote_ota_password
 
 wifi:
   ssid: !secret wifi_ssid
   password: !secret wifi_password
-  
-  # Uncomment and configure this if HA does not detect your device
-  # manual_ip:
-  #   static_ip: 192.168.1.222
-  #   gateway: 192.168.1.1
-  #   subnet: 255.255.255.0
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "Plantidote Fallback Hotspot"
+    password: !secret plantidote_fallback_hotspot_password
 
 captive_portal:
 
 switch:
 
   - platform: gpio
-    pin: GPIO5
+    pin: GPIO22
     id: ${esp_id}_switch_builtin_led
     name: "${esp_name} Built-in LED"
     icon: "mdi:water-pump"
@@ -96,69 +96,88 @@ output:
     id: ${esp_id}_power_moisture
 
   - platform: gpio
-    pin: GPIO17
+    pin: GPIO23
     id: ${esp_id}_power_pump
 
   - platform: gpio
-    pin: GPIO27
+    pin: GPIO13
     id: ${esp_id}_power_wl_100
 
   - platform: gpio
+    pin: GPIO14
+    id: ${esp_id}_power_wl_75
+
+  - platform: gpio
+    pin: GPIO27
+    id: ${esp_id}_power_wl_50
+
+  - platform: gpio
     pin: GPIO26
-    id: ${esp_id}_power_wl_70
+    id: ${esp_id}_power_wl_25
 
   - platform: gpio
     pin: GPIO25
-    id: ${esp_id}_power_wl_30
-
-  - platform: gpio
-    pin: GPIO33
     id: ${esp_id}_power_wl_10
 
 sensor:
   - platform: adc
-    pin: GPIO32
+    pin: GPIO35
     id: ${esp_id}_water_level_sensor
     update_interval: never
 
+# I added voltage to monitor separatly...
   - platform: adc
-    pin: GPIO34
-    id: ${esp_id}_soil_moisture
-    name: "${esp_name} soil moisture"
-    device_class: "MOISTURE"
-    icon: "mdi:sprout"
-    unit_of_measurement: "%"
-    accuracy_decimals: 0
-    attenuation: 11dB
+    pin: GPIO33
+    id: ${esp_id}_soil_moisture_voltage
+    name: "${esp_name} soil moisture voltage"
+    device_class: "VOLTAGE"
+    unit_of_measurement: "V"
+    accuracy_decimals: 2
+    attenuation: auto
     update_interval: never
     filters:
       - median:
           window_size: 11
           send_every: 11
           send_first_at: 11
-      - calibrate_linear:
-        - ${soil_moisture_calibration_no_water} -> 0.00
-        - ${soil_moisture_calibration_full_water} -> 100.00
-      - lambda: |
-          if (x < 0) return 0; 
-          else if (x > 100) return 100;
-          else return (x);
+
+#... and calculate the percentage here. (linear function calculation)
+  - platform: template
+    id: ${esp_id}_soil_moisture
+    name: "${esp_name} soil moisture percentage"
+    device_class: "MOISTURE"
+    icon: "mdi:sprout"
+    unit_of_measurement: "%"
+    accuracy_decimals: 0
+    update_interval: never
+    lambda: |-
+      for (int j = 0; j < 11; j++) {
+        id(${esp_id}_soil_moisture_voltage).update();
+      }
+      float percentage = (id(${esp_id}_soil_moisture_voltage).state * (-100 / ($soil_moisture_calibration_no_water - $soil_moisture_calibration_full_water)) + 100 + ((100 * $soil_moisture_calibration_full_water) / ($soil_moisture_calibration_no_water - $soil_moisture_calibration_full_water)));
+      if (percentage > 100) {
+        return 100;
+      } else if (percentage < 0) {
+        return 0;
+      } else {
+        return percentage;
+      }
 
   - platform: adc
-    pin: GPIO35
+    pin: GPIO32
     id: ${esp_id}_battery_voltage
     name: "${esp_name} battery voltage"
     device_class: "VOLTAGE"
     unit_of_measurement: "V"
     accuracy_decimals: 2
-    attenuation: 11dB
+    attenuation: auto
     update_interval: never
     filters:
       - median:
           window_size: 11
           send_every: 11
           send_first_at: 11
-      - multiply: 2.0
+      - multiply: 1.33
     on_value_range:
       below: ${battery_threshold}
       then:
@@ -183,6 +202,7 @@ sensor:
         return percentage;
       }
 
+
   - platform: template
     id: ${esp_id}_water_level
     name: "${esp_name} water level"
@@ -190,8 +210,8 @@ sensor:
     unit_of_measurement: '%'
     update_interval: never
     lambda: |-
-      int values[4] = { 100, 70, 30, 10 };
-      for (int i = 0; i < 4; i++) {
+      int values[5] = { 100, 75, 50, 25, 10 };
+      for (int i = 0; i < 5; i++) {
         auto level = id(${esp_id}_power_wl_100);
 
         switch (i) {
@@ -199,12 +219,15 @@ sensor:
             level = id(${esp_id}_power_wl_100);
             break;
           case 1:
-            level = id(${esp_id}_power_wl_70);
+            level = id(${esp_id}_power_wl_75);
             break;
           case 2:
-            level = id(${esp_id}_power_wl_30);
+            level = id(${esp_id}_power_wl_50);
             break;
           case 3:
+            level = id(${esp_id}_power_wl_25);
+            break;
+          case 4:
             level = id(${esp_id}_power_wl_10);
             break;
         }
@@ -240,8 +263,9 @@ script:
       - output.turn_off: ${esp_id}_power_moisture
       - output.turn_off: ${esp_id}_power_pump
       - output.turn_off: ${esp_id}_power_wl_100
-      - output.turn_off: ${esp_id}_power_wl_70
-      - output.turn_off: ${esp_id}_power_wl_30
+      - output.turn_off: ${esp_id}_power_wl_75
+      - output.turn_off: ${esp_id}_power_wl_50
+      - output.turn_off: ${esp_id}_power_wl_25
       - output.turn_off: ${esp_id}_power_wl_10
       
       - logger.log: "--- Going to sleep in 60s ---"
@@ -307,7 +331,7 @@ script:
       - deep_sleep.enter: 
           until: ${sleep_until}
           time_id: ha_time
-          # sleep_duration: 100s # FOR TEST ONLY
+#          sleep_duration: 100s # FOR TEST ONLY
 
 # interval: # FOR TEST ONLY
 #   - interval: 1min
